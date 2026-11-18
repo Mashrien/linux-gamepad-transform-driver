@@ -1,6 +1,6 @@
 # Gamepad Filter
 
-A foreground Linux gamepad filter written in C# and published with .NET NativeAOT. It grabs each enabled controller's evdev device and creates a virtual controller named `<original name> (filtered)`. Buttons and unconfigured axes pass through. For a configured axis, the virtual device uses the filter's dead zone in place of the source axis's advertised flat and fuzz settings.
+A foreground Linux gamepad filter written in C# and published with .NET NativeAOT. It grabs each enabled controller's evdev device and creates a virtual controller named `<original name> (filtered)`. Buttons and unconfigured axes pass through. For a configured axis, the virtual device uses the filter's dead zone in place of the source axis's advertised flat and fuzz settings, as well as allowing redefinition / calibration of the axis's zero point. (eg; Device axis fails to return to 0, instead some deviated value.)
 
 ## Linux requirements
 
