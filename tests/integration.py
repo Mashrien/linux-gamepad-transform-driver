@@ -54,7 +54,7 @@ class IntegrationTests(unittest.TestCase):
     def launch(self, config, explicit_device=True):
         self.path.write_text(config.replace("DEVICE", NAME.replace(" ", "_")))
         self.assertTrue(BINARY.is_file(), f"filter has not been built: {BINARY}")
-        command = [BINARY, self.path]
+        command = [BINARY, "--no-tray", self.path]
         if explicit_device:
             command.extend(("--device", self.source.device.path))
         return subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -145,7 +145,7 @@ class IntegrationTests(unittest.TestCase):
         self.event(output, e.EV_ABS, e.ABS_X, -2147483648, -2147483648)
 
     def test_missing_default_config_creates_template_and_exits(self):
-        result = subprocess.run([BINARY], cwd=self.path.parent, capture_output=True, text=True, timeout=3)
+        result = subprocess.run([BINARY, "--no-tray"], cwd=self.path.parent, capture_output=True, text=True, timeout=3)
         self.assertEqual(result.returncode, 0, result.stderr)
         template = self.path.read_text()
         self.assertNotIn(NAME.replace(" ", "_"), template)
@@ -171,7 +171,7 @@ class IntegrationTests(unittest.TestCase):
 
     def test_absent_explicit_config_is_created_at_that_path(self):
         path = self.path.with_name("controllers.conf")
-        result = subprocess.run([BINARY, path], cwd=path.parent, capture_output=True, text=True, timeout=3)
+        result = subprocess.run([BINARY, "--no-tray", path], cwd=path.parent, capture_output=True, text=True, timeout=3)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(path.is_file())
         self.assertFalse(self.path.exists())
@@ -203,7 +203,7 @@ class IntegrationTests(unittest.TestCase):
     def test_disabled_profile_skips_device_and_leaves_config_intact(self):
         config = f"[{NAME.replace(' ', '_')}]\nEnabled=false\n[ABS_X]\nZeroOffset=2604\n"
         self.path.write_text(config)
-        result = subprocess.run([BINARY], cwd=self.path.parent, capture_output=True, text=True, timeout=3)
+        result = subprocess.run([BINARY, "--no-tray"], cwd=self.path.parent, capture_output=True, text=True, timeout=3)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.path.read_text(), config)
         self.source.device.grab()

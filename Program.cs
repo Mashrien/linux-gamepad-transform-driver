@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using GamepadFilter;
 
-const string usage = "Usage: gamepad-filter [config.conf] [--device /dev/input/eventN]";
+const string usage = "Usage: gamepad-filter [config.conf] [--device /dev/input/eventN] [--no-tray]";
 if (args.Length == 1 && args[0] is "--help" or "-h")
 {
     Console.WriteLine(usage);
@@ -9,6 +9,8 @@ if (args.Length == 1 && args[0] is "--help" or "-h")
     return 0;
 }
 
+bool noTray = args.Contains("--no-tray");
+args = args.Where(argument => argument != "--no-tray").ToArray();
 string? deviceOverride = null;
 int pathArguments = args.Length;
 if (args.Length >= 2 && args[^2] == "--device")
@@ -55,48 +57,30 @@ try
         return 0;
     }
 
-    var profiles = FilterConfig.Read(configPath);
-    if (deviceOverride is not null)
+    using var reload = new AutoResetEvent(false);
+    using TrayIcon? tray = noTray ? null : TrayIcon.TryCreate(reload, stop);
+    void ReportError(string message)
     {
-        string path = File.ResolveLinkTarget(deviceOverride, returnFinalTarget: true)?.FullName
-            ?? Path.GetFullPath(deviceOverride);
-        InputDeviceNode? device = attached.FirstOrDefault(candidate => candidate.Path == path);
-        if (device is null)
-            throw new IOException($"No input event device found at {deviceOverride}.");
-        DeviceProfile profile = device.Match(profiles)
-            ?? throw new FormatException($"No configuration matches {deviceOverride} ({device.Name}).");
-        if (!profile.Enabled)
-        {
-            Console.WriteLine($"{device.Name} is disabled in {configPath}.");
-            return 0;
-        }
-        return RunFilter(device, profile, stop.Token);
+        if (tray is null)
+            Console.Error.WriteLine($"gamepad-filter: {message}");
+        else
+            tray.ReportError(message);
     }
 
-    var physicalKeys = attached.Where(device => !device.IsVirtual).Select(device => device.Key).ToHashSet();
-    var filters = new List<Task<int>>();
-    foreach (InputDeviceNode device in attached)
-    {
-        // Skip our own virtual output and prefer a physical device when names collide.
-        if (device.IsVirtual && (physicalKeys.Contains(device.Key)
-            || device.Name.EndsWith(InputDeviceNode.FilteredSuffix, StringComparison.Ordinal)))
-            continue;
+    var host = new FilterHost(configPath, deviceOverride, ReportError);
+    if (tray is null)
+        return host.Run(keepOpen: false, reload, stop.Token);
 
-        if (device.Match(profiles) is { Enabled: true } profile)
-        {
-            // Each relay blocks in poll, so give it a dedicated worker and share the shutdown signal.
-            filters.Add(Task.Factory.StartNew(() => RunFilter(device, profile, stop.Token),
-                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default));
-        }
-    }
-
-    if (filters.Count == 0)
+    Task<int> worker = Task.Run(() => host.Run(keepOpen: true, reload, stop.Token));
+    try
     {
-        Console.WriteLine($"No attached controllers with enabled profiles in {configPath}.");
-        return 0;
+        tray.Run();
     }
-    int[] results = await Task.WhenAll(filters);
-    return results.Max();
+    finally
+    {
+        stop.Cancel();
+    }
+    return worker.GetAwaiter().GetResult();
 }
 catch (Exception error) when (error is IOException or UnauthorizedAccessException or FormatException)
 {
@@ -107,25 +91,4 @@ catch (DllNotFoundException)
 {
     Console.Error.WriteLine("gamepad-filter: first-run device discovery requires libudev.so.1.");
     return 1;
-}
-
-static int RunFilter(InputDeviceNode device, DeviceProfile profile, CancellationToken stop)
-{
-    try
-    {
-        using var source = LinuxInput.Open(device.Path);
-        if (LinuxInput.Name(source) != device.Name)
-            throw new IOException("The input device changed during discovery.");
-        GamepadRelay.Run(source, device.Name, profile.Axes, stop);
-        return 0;
-    }
-    catch (OperationCanceledException) when (stop.IsCancellationRequested)
-    {
-        return 0;
-    }
-    catch (Exception error) when (error is IOException or UnauthorizedAccessException or FormatException)
-    {
-        Console.Error.WriteLine($"gamepad-filter: {device.Name} ({device.Path}): {error.Message}");
-        return 1;
-    }
 }

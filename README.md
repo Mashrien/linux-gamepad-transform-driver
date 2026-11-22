@@ -4,12 +4,14 @@ A foreground Linux gamepad filter written in C# and published with .NET NativeAO
 
 ## Linux requirements
 
-The release targets **Linux x86-64** and includes its .NET runtime. It needs two system libraries:
+The release targets **Linux x86-64** and includes its .NET runtime. It uses the following system libraries:
 
 | Library | Debian and Ubuntu | Fedora |
 | --- | --- | --- |
 | glibc 2.34 or newer (provides `libc.so.6` and `libm.so.6`) | `libc6` | `glibc` |
 | `libudev.so.1` (used to detect physical controllers during config generation) | `libudev1` | `systemd-libs` |
+| `libayatana-appindicator3.so.1` (tray icon and menu) | `libayatana-appindicator3-1` | `libayatana-appindicator-gtk3` |
+| `libgtk-3.so.0` (GTK 3, also pulls in GLib and GObject) | `libgtk-3-0t64` or `libgtk-3-0` | `gtk3` |
 
 The kernel needs evdev and uinput enabled. The account running the filter needs read access to the controller's `/dev/input/event*` and write access to `/dev/uinput`. If uinput is available as a module and the node is missing, load it with `sudo modprobe uinput`.
 
@@ -21,10 +23,10 @@ Download a package from [GitHub Releases](https://github.com/Mashrien/linux-game
 
 ```sh
 # Debian and Ubuntu
-sudo apt install ./gamepad-filter_0.1.0-1_amd64.deb
+sudo apt install ./gamepad-filter_0.2.0-1_amd64.deb
 
 # Fedora
-sudo dnf install ./gamepad-filter-0.1.0-1.x86_64.rpm
+sudo dnf install ./gamepad-filter-0.2.0-1.x86_64.rpm
 
 # After installing either package
 gamepad-filter
@@ -34,7 +36,7 @@ For the generic ZIP, install the libraries above, extract the archive, and run `
 
 The first run creates `gamepad.conf` in the working directory and exits so you can edit it. It uses Linux's udev joystick classification to list physical controllers and adds a section for each absolute axis with a reported range. The first axis section for each controller shows a commented example of every axis option. Uncomment and edit the settings you want to use. Empty sections leave those axes unchanged.
 
-On later runs, the filter reads the same file and launches every enabled profile whose controller is attached. Set `Enabled=false` in a controller's section to leave it on its physical input device. Start the filter before the game and choose the device with the `(filtered)` suffix if the game lists both. Press Ctrl+C to release the controllers.
+On later runs, the filter reads the same file and launches every enabled profile whose controller is attached. Set `Enabled=false` in a controller's section to leave it on its physical input device. Start the filter before the game and choose the device with the `(filtered)` suffix if the game lists both. Choose **Quit** from the tray icon to release the controllers and close the app. A terminal launch also accepts Ctrl+C.
 
 Pass a filename to use a different config. The supplied `afterglow.conf` uses `ZeroOffset=2604` and a 328-count dead zone on `ABS_X`. A missing custom path gets a new template, too. Add `--device /dev/input/eventN` or a stable `/dev/input/by-id/…-event-joystick` path to run one controller from the shared config.
 
@@ -53,7 +55,9 @@ The generated INI uses a device header such as `[Afterglow_Gamepad_for_Xbox_360]
 
 Whole numbers are raw counts. Decimal values from −1.0 to +1.0 are fractions, rounded to the nearest count, with halfway values rounded away from zero. `ZeroOffset`, `DeadZone`, and `Threshold` use the larger magnitude of the device's advertised endpoints, so `DeadZone=0.01` on `ABS_X` means `round(0.01 × 32768) = 328`. Fractional raw endpoints use the device endpoint on their own side, so `RawMaximum=1.0` uses the reported positive maximum, `32767` on this pad.
 
-This version is for gamepad input. Rumble forwarding and automatic reconnection are outside its scope. Restart the process after reconnecting the controller or editing its config.
+Save edits to the active config and choose **Reload Config** from the tray icon. The filter validates the attached controllers' settings first, then briefly disconnects and recreates the virtual controllers to apply the changes. If the config contains invalid settings, an error dialog appears and the current filters keep running. Reload also discovers controllers that have been reconnected and applies changes to Enabled.
+
+The tray uses AppIndicator/StatusNotifierItem support, which KDE Plasma provides. GNOME needs the [AppIndicator and KStatusNotifierItem Support extension](https://extensions.gnome.org/extension/615/appindicator-support/). Use `--no-tray` for terminal or headless operation. Without a usable graphical session or the tray libraries, the app uses terminal mode. Rumble forwarding remains outside this version's scope.
 
 ## Build and test
 
@@ -65,7 +69,7 @@ dotnet publish GamepadFilter.csproj -c Release -r linux-x64 -p:RuntimeFrameworkV
 
 The version shown reproduces the delivered build on the installed SDK. On a newer SDK that bundles a later .NET 10 patch, you can omit the override. The published executable uses the Linux C library and needs no separately installed .NET runtime.
 
-After publishing, build the three release packages and their SHA-256 checksums with `./packaging/build-release.sh 0.1.0 10.0.14`. This uses `dpkg-deb`, `rpmbuild`, `readelf`, `zip`, and `unzip`, and writes assets under `out/release`.
+After publishing, build the three release packages and their SHA-256 checksums with `./packaging/build-release.sh 0.2.0 10.0.14`. This uses `dpkg-deb`, `rpmbuild`, `readelf`, `zip`, and `unzip`, and writes assets under `out/release`.
 
 The integration tests use Python's `evdev` module and create temporary gamepads through `/dev/uinput`:
 
@@ -74,3 +78,9 @@ python3 tests/integration.py out/gamepad-filter -v
 ```
 
 Set `GAMEPAD_TEST_PHYSICAL` to an attached physical controller's event node to also check its generated axis list and examples.
+
+The tray integration check uses Python GObject bindings and a desktop session with a StatusNotifierWatcher. It activates the exported Reload Config and Quit menu items through D-Bus and verifies that the calibration changes and input grabs are released:
+
+```sh
+python3 tests/tray.py out/gamepad-filter -v
+```

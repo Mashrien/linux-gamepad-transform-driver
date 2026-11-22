@@ -22,16 +22,7 @@ internal static class GamepadRelay
                 codes.Add(type, Codes(Capabilities(source, type, maximum)).ToArray());
 
         ushort[] axes = codes.GetValueOrDefault(EvAbs) ?? [];
-        var filters = new AxisFilter?[AbsMax + 1];
-        foreach (var (code, axis) in options)
-        {
-            // Generated empty sections keep the axis's native range and calibration metadata.
-            if (axis.IsEmpty)
-                continue;
-            if (!axes.Contains(code))
-                throw new FormatException($"{axis.Section}: {name} does not expose this axis.");
-            filters[code] = axis.Bind(Axis(source, code));
-        }
+        var filters = Validate(source, name, options);
 
         string virtualName = VirtualName(name);
         using var output = Open("/dev/uinput", writable: true);
@@ -107,6 +98,23 @@ internal static class GamepadRelay
                 Write(output, input);
             }
         }
+    }
+
+    public static AxisFilter?[] Validate(
+        SafeFileHandle source, string name, Dictionary<ushort, AxisOptions> options)
+    {
+        byte[] axes = Capabilities(source, EvAbs, AbsMax);
+        var filters = new AxisFilter?[AbsMax + 1];
+        foreach (var (code, axis) in options)
+        {
+            // Generated empty sections keep the axis's native range and calibration metadata.
+            if (axis.IsEmpty)
+                continue;
+            if (!IsSet(axes, code))
+                throw new FormatException($"{axis.Section}: {name} does not expose this axis.");
+            filters[code] = axis.Bind(Axis(source, code));
+        }
+        return filters;
     }
 
     private static void SyncState(

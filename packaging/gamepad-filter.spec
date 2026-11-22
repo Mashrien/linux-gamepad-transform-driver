@@ -15,6 +15,8 @@ BuildArch:      x86_64
 BuildRequires:  unzip
 Requires:       glibc >= %{glibc_floor}
 Requires:       libudev.so.1()(64bit)
+Requires:       libayatana-appindicator3.so.1()(64bit)
+Requires:       libgtk-3.so.0()(64bit)
 
 %description
 Filter analog gamepad axes in userspace with evdev and uinput.

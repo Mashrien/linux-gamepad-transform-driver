@@ -47,7 +47,7 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: Mashrien <29497715+Mashrien@users.noreply.github.com>
-Depends: libc6 (>= $glibc_floor), libudev1
+Depends: libc6 (>= $glibc_floor), libudev1, libayatana-appindicator3-1, libgtk-3-0t64 | libgtk-3-0
 Homepage: https://github.com/Mashrien/linux-gamepad-transform-driver
 Description: INI-configurable Linux gamepad axis filter
  Filter analog gamepad axes in userspace with evdev and uinput.
